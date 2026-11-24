@@ -18,15 +18,30 @@ warp-cli MASQUE proxy       (socks5h://127.0.0.1:40000) ──▶ Internet (Clou
 
 ## Prerequisites
 
-- Python 3.10+
-- `curl`
-- [Cloudflare WARP CLI](https://developers.cloudflare.com/warp-client/) (`warp-cli`, registered and able to run `warp-cli --accept-tos mode proxy` / `tunnel protocol set MASQUE`)
+- Python 3.10+ (zero third-party `pip` or `curl` dependencies)
+- [Cloudflare WARP CLI](https://developers.cloudflare.com/warp-client/) (`warp-cli`, auto-detected via `WARP_CLI_BIN`, `/usr/bin/warp-cli`, `/usr/local/bin/warp-cli`, `/opt/homebrew/bin/warp-cli`, or `PATH`, registered and able to run `warp-cli --accept-tos mode proxy` / `tunnel protocol set MASQUE`)
 
 ## Installation
 
 ```bash
 bash install.sh
 ```
+
+`install.sh` auto-detects `python3` and `warp-cli`, prompts interactively if any binary cannot be found, and writes the resolved paths into `~/.config/systemd/user/warp-rotating-proxy.service`. You can also pass explicit options:
+
+```bash
+bash install.sh \
+  --dest ~/.local/share/warp-rotating-proxy \
+  --python /usr/bin/python3 \
+  --warp-cli /usr/bin/warp-cli \
+  --host 127.0.0.1 \
+  --port 40001 \
+  --socks-host 127.0.0.1 \
+  --socks-port 40000 \
+  --non-interactive
+```
+
+Run `bash install.sh --help` for all options.
 
 ## Endpoints & Usage
 
@@ -64,6 +79,7 @@ Environment=BRIDGE_UPSTREAM_ROTATE_URL=http://127.0.0.1:40001/_rotate
 | `WARP_PROXY_PORT` | `40001` | HTTP proxy & control listen port |
 | `WARP_SOCKS_HOST` | `127.0.0.1` | `warp-cli` SOCKS5 host |
 | `WARP_SOCKS_PORT` | `40000` | `warp-cli` SOCKS5 port |
+| `WARP_CLI_BIN` | *(auto-detected)* | Override path to `warp-cli` executable |
 | `WARP_PROTOCOL` | `MASQUE` | WARP tunnel protocol (`MASQUE` required on `warp-cli 2026.8+`) |
 | `WARP_ROTATE_COOLDOWN` | `15` | Minimum seconds between non-forced rotations |
 | `WARP_BAD_PREFIX_TTL` | `1800` | How long rotated-from IPv6 `/64` prefixes are avoided (seconds) |

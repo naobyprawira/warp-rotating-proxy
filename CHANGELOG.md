@@ -5,6 +5,15 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-24
+
+### Added
+- Automatic `WARP_CLI_BIN` path resolution (`resolve_binary()` in `proxy_config.py`) across env overrides, common install locations, and `PATH`.
+- Portable `install.sh` CLI flags (`--dest`, `--python`, `--warp-cli`, `--host`, `--port`, `--socks-host`, `--socks-port`, `--non-interactive`) with auto-detection and interactive prompt fallback.
+
+### Changed
+- Replaced external `curl` subprocess in `WarpRotator.trace_egress_ip()` with pure Python stdlib SOCKS5 + TLS HTTP request, removing `curl` as a runtime dependency.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added
