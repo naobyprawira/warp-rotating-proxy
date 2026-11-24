@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+tests
+systemd
+install.sh
+README.md
+CHANGELOG.md
+docker-compose.yml

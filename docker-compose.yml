@@ -1,0 +1,26 @@
+services:
+  warp-rotating-proxy:
+    build: .
+    container_name: warp-rotating-proxy
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # Bind only to loopback by default so the proxy is not exposed publicly.
+      - "127.0.0.1:${WARP_PROXY_PORT:-40001}:${WARP_PROXY_PORT:-40001}"
+    environment:
+      WARP_PROXY_HOST: "0.0.0.0"
+      WARP_PROXY_PORT: "${WARP_PROXY_PORT:-40001}"
+      WARP_SOCKS_HOST: "127.0.0.1"
+      WARP_SOCKS_PORT: "${WARP_SOCKS_PORT:-40000}"
+      WARP_PROTOCOL: "${WARP_PROTOCOL:-MASQUE}"
+      WARP_ROTATE_TOKEN: "${WARP_ROTATE_TOKEN:-}"
+      WARP_PROXY_USER: "${WARP_PROXY_USER:-}"
+      WARP_PROXY_PASS: "${WARP_PROXY_PASS:-}"
+    volumes:
+      - warp_state:/var/lib/cloudflare-warp
+
+volumes:
+  warp_state:
