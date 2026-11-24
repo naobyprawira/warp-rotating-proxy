@@ -23,11 +23,20 @@ def resolve_binary(env_var: str, binary_name: str, extra_candidates: list[str]) 
     return os.path.expanduser(extra_candidates[0]) if extra_candidates else binary_name
 
 
+def resolve_port(env_vars: tuple[str, ...], default: int) -> int:
+    """Resolve port from the first non-empty env var in priority order."""
+    for name in env_vars:
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            return int(raw)
+    return default
+
+
 LISTEN_HOST = os.environ.get("WARP_PROXY_HOST", "127.0.0.1")
-LISTEN_PORT = int(os.environ.get("WARP_PROXY_PORT", "40001"))
+LISTEN_PORT = resolve_port(("WARP_PROXY_PORT", "PORT"), 40001)
 
 WARP_SOCKS_HOST = os.environ.get("WARP_SOCKS_HOST", "127.0.0.1")
-WARP_SOCKS_PORT = int(os.environ.get("WARP_SOCKS_PORT", "40000"))
+WARP_SOCKS_PORT = resolve_port(("WARP_SOCKS_PORT",), 40000)
 WARP_PROTOCOL = os.environ.get("WARP_PROTOCOL", "MASQUE")
 WARP_CLI_BIN = resolve_binary(
     "WARP_CLI_BIN",
@@ -48,6 +57,8 @@ CONNECT_TIMEOUT_SEC = float(os.environ.get("WARP_CONNECT_TIMEOUT", "15"))
 TRACE_URL = os.environ.get("WARP_TRACE_URL", "https://cloudflare.com/cdn-cgi/trace")
 PAUSE_FILE = os.environ.get("WARP_PAUSE_FILE", "").strip()
 ROTATE_TOKEN = os.environ.get("WARP_ROTATE_TOKEN", "").strip()
+PROXY_USER = os.environ.get("WARP_PROXY_USER", "").strip()
+PROXY_PASS = os.environ.get("WARP_PROXY_PASS", "").strip()
 
 
 def log(msg: str) -> None:

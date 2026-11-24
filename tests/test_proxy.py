@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import socket
@@ -111,6 +112,8 @@ class TestProxy(unittest.TestCase):
                 c1.close()
                 self.assertEqual(r1.status, 200)
                 self.assertTrue(d1["warp_connected"])
+                self.assertFalse(d1["proxy_auth_enabled"])
+                self.assertFalse(d1["rotate_auth_enabled"])
 
                 # 2. Test POST /_rotate?force=1
                 c2 = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
@@ -132,6 +135,121 @@ class TestProxy(unittest.TestCase):
                 raw.close()
                 self.assertEqual(echoed, b"ECHO:ping-warp")
                 self.assertEqual(seen_targets, [("mock.opencode.ai", 443)])
+        finally:
+            proxy_srv.shutdown()
+            proxy_srv.server_close()
+            socks_srv.close()
+            echo_srv.close()
+
+    def test_proxy_auth_and_rotate_x_api_key_and_plain_http_strip(self) -> None:
+        echo_srv, echo_port = _start_echo_server()
+        socks_srv, socks_port, seen_targets = _start_mock_socks5(echo_port)
+        proxy_srv = wp.ReusableThreadingHTTPServer(("127.0.0.1", 0), wp.ProxyHandler)
+        proxy_port = proxy_srv.server_address[1]
+        threading.Thread(target=proxy_srv.serve_forever, daemon=True).start()
+
+        good_creds = base64.b64encode(b"warpuser:warppass").decode("ascii")
+        bad_creds = base64.b64encode(b"warpuser:wrong").decode("ascii")
+
+        try:
+            with patch.object(wp, "WARP_SOCKS_HOST", "127.0.0.1"), patch.object(
+                wp, "WARP_SOCKS_PORT", socks_port
+            ), patch.object(wp, "PROXY_USER", "warpuser"), patch.object(
+                wp, "PROXY_PASS", "warppass"
+            ), patch.object(
+                wp, "ROTATE_TOKEN", "rot-secret"
+            ), patch.object(
+                wp.ROTATOR, "is_connected", return_value=True
+            ), patch.object(
+                wp.ROTATOR,
+                "rotate",
+                return_value={"ok": True, "rotated": True, "old_ip": "1.1.1.1", "new_ip": "2.2.2.2"},
+            ) as mock_rot:
+                # 1. /health remains accessible and reports auth flags enabled
+                c_health = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
+                c_health.request("GET", "/health")
+                r_health = c_health.getresponse()
+                d_health = json.loads(r_health.read().decode())
+                c_health.close()
+                self.assertEqual(r_health.status, 200)
+                self.assertTrue(d_health["proxy_auth_enabled"])
+                self.assertTrue(d_health["rotate_auth_enabled"])
+
+                # 2. CONNECT without Proxy-Authorization -> 407
+                raw_noauth = socket.create_connection(("127.0.0.1", proxy_port), timeout=5)
+                raw_noauth.sendall(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+                resp_noauth = raw_noauth.recv(4096)
+                raw_noauth.close()
+                self.assertIn(b"407 Proxy Authentication Required", resp_noauth)
+                self.assertIn(b"Proxy-Authenticate: Basic", resp_noauth)
+
+                # 3. CONNECT with wrong credentials -> 407
+                raw_bad = socket.create_connection(("127.0.0.1", proxy_port), timeout=5)
+                raw_bad.sendall(
+                    f"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic {bad_creds}\r\n\r\n".encode(
+                        "ascii"
+                    )
+                )
+                resp_bad = raw_bad.recv(4096)
+                raw_bad.close()
+                self.assertIn(b"407 Proxy Authentication Required", resp_bad)
+
+                # 4. CONNECT with valid credentials -> 200
+                raw_ok = socket.create_connection(("127.0.0.1", proxy_port), timeout=5)
+                raw_ok.sendall(
+                    f"CONNECT auth.example.com:443 HTTP/1.1\r\nHost: auth.example.com:443\r\nProxy-Authorization: Basic {good_creds}\r\n\r\n".encode(
+                        "ascii"
+                    )
+                )
+                resp_ok = raw_ok.recv(4096)
+                self.assertIn(b"200 Connection Established", resp_ok)
+                raw_ok.sendall(b"secret-ping")
+                self.assertEqual(raw_ok.recv(4096), b"ECHO:secret-ping")
+                raw_ok.close()
+
+                # 5. Plain HTTP forward without auth -> 407; with valid auth -> strips Proxy-Authorization
+                c_plain_noauth = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
+                c_plain_noauth.request("GET", "http://plain.example.com/test")
+                r_plain_noauth = c_plain_noauth.getresponse()
+                r_plain_noauth.read()
+                c_plain_noauth.close()
+                self.assertEqual(r_plain_noauth.status, 407)
+
+                raw_plain = socket.create_connection(("127.0.0.1", proxy_port), timeout=5)
+                raw_plain.sendall(
+                    (
+                        f"GET http://plain.example.com/hello HTTP/1.1\r\n"
+                        f"Host: plain.example.com\r\n"
+                        f"Proxy-Authorization: Basic {good_creds}\r\n"
+                        f"X-Custom: keep-me\r\n\r\n"
+                    ).encode("ascii")
+                )
+                echoed_plain = raw_plain.recv(4096)
+                raw_plain.close()
+                self.assertTrue(echoed_plain.startswith(b"ECHO:GET /hello HTTP/1.1"))
+                self.assertNotIn(b"Proxy-Authorization", echoed_plain)
+                self.assertIn(b"X-Custom: keep-me", echoed_plain)
+                self.assertEqual(
+                    seen_targets,
+                    [("auth.example.com", 443), ("plain.example.com", 80)],
+                )
+
+                # 6. POST /_rotate requires ROTATE_TOKEN and accepts X-API-Key
+                c_rot_unauth = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
+                c_rot_unauth.request("POST", "/_rotate")
+                r_rot_unauth = c_rot_unauth.getresponse()
+                r_rot_unauth.read()
+                c_rot_unauth.close()
+                self.assertEqual(r_rot_unauth.status, 401)
+
+                c_rot_xkey = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
+                c_rot_xkey.request("POST", "/_rotate", headers={"X-API-Key": "rot-secret"})
+                r_rot_xkey = c_rot_xkey.getresponse()
+                d_rot_xkey = json.loads(r_rot_xkey.read().decode())
+                c_rot_xkey.close()
+                self.assertEqual(r_rot_xkey.status, 200)
+                self.assertTrue(d_rot_xkey["rotated"])
+                mock_rot.assert_called_once_with(force=False)
         finally:
             proxy_srv.shutdown()
             proxy_srv.server_close()

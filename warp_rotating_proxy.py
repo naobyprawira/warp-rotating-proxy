@@ -11,6 +11,7 @@ Exposes:
 
 from __future__ import annotations
 
+import base64
 import json
 import secrets
 import signal
@@ -24,6 +25,8 @@ from proxy_config import (
     CONNECT_TIMEOUT_SEC,
     LISTEN_HOST,
     LISTEN_PORT,
+    PROXY_PASS,
+    PROXY_USER,
     ROTATE_TOKEN,
     WARP_SOCKS_HOST,
     WARP_SOCKS_PORT,
@@ -74,10 +77,50 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return True
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
-            return secrets.compare_digest(auth[7:].strip(), ROTATE_TOKEN)
+            if secrets.compare_digest(auth[7:].strip(), ROTATE_TOKEN):
+                return True
+        xkey = self.headers.get("X-API-Key", "").strip()
+        if xkey and secrets.compare_digest(xkey, ROTATE_TOKEN):
+            return True
         return False
 
+    def _proxy_authorized(self) -> bool:
+        if not (PROXY_USER or PROXY_PASS):
+            return True
+        header = self.headers.get("Proxy-Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        token = header[6:].strip()
+        try:
+            decoded = base64.b64decode(token, validate=True).decode("utf-8")
+        except Exception:
+            return False
+        if ":" not in decoded:
+            return False
+        user, pw = decoded.split(":", 1)
+        return secrets.compare_digest(user, PROXY_USER) and secrets.compare_digest(
+            pw, PROXY_PASS
+        )
+
+    def _send_proxy_auth_required(self) -> None:
+        self.close_connection = True
+        body = b'{"error":"Proxy authentication required"}'
+        try:
+            self.send_response(407, "Proxy Authentication Required")
+            self.send_header("Proxy-Authenticate", 'Basic realm="warp-rotating-proxy"')
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_CONNECT(self) -> None:
+        if not self._proxy_authorized():
+            self._send_proxy_auth_required()
+            return
         try:
             host, port = parse_connect_authority(self.path)
         except ValueError as exc:
@@ -115,6 +158,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "listen": f"{LISTEN_HOST}:{LISTEN_PORT}",
                     "socks_upstream": f"{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
                     "warp_connected": ROTATOR.is_connected(),
+                    "proxy_auth_enabled": bool(PROXY_USER or PROXY_PASS),
+                    "rotate_auth_enabled": bool(ROTATE_TOKEN),
                 },
             )
             return True
@@ -124,6 +169,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         return False
 
     def _forward_plain_http(self, method: str) -> None:
+        if not self._proxy_authorized():
+            self._send_proxy_auth_required()
+            return
         parsed = urlsplit(self.path)
         if parsed.scheme not in ("http",) or not parsed.hostname:
             self._send_json(404, {"error": f"Unknown path or scheme: {self.path}"})
@@ -160,7 +208,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             has_host = False
             for k, v in self.headers.items():
                 lk = k.lower()
-                if lk in ("proxy-connection", "connection"):
+                if lk in ("proxy-authorization", "proxy-connection", "connection"):
                     continue
                 if lk == "host":
                     has_host = True
@@ -240,7 +288,9 @@ def main() -> None:
 
     log(
         f"WARP rotating HTTP proxy listening on http://{LISTEN_HOST}:{LISTEN_PORT} "
-        f"(upstream socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT})"
+        f"(upstream socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}, "
+        f"proxy_auth={'on' if (PROXY_USER or PROXY_PASS) else 'off'}, "
+        f"rotate_auth={'on' if ROTATE_TOKEN else 'off'})"
     )
     try:
         server.serve_forever()
