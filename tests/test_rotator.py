@@ -190,6 +190,17 @@ class TestRotator(unittest.TestCase):
         t.join(timeout=2.0)
         self.assertEqual(done, [True])
 
+    def test_mark_bad_prefix_evicts_oldest_when_cap_reached(self) -> None:
+        rot = wr.WarpRotator()
+        with patch.object(wr, "MAX_BAD_PREFIXES", 2):
+            rot.mark_bad_prefix("2a09:bac5:3a00:1")
+            rot.mark_bad_prefix("2a09:bac5:3a00:2")
+            rot.mark_bad_prefix("2a09:bac5:3a00:3")
+        self.assertEqual(
+            list(rot._bad_prefixes.keys()),
+            ["2a09:bac5:3a00:2", "2a09:bac5:3a00:3"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

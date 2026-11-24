@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "warp-rotating-proxy"
-version = "0.2.2"
+version = "0.2.3"
 description = "Zero-dependency Python 3 HTTP CONNECT and forward proxy backed by Cloudflare WARP MASQUE with IPv6 /64 rotation."
 readme = "README.md"
 requires-python = ">=3.10"

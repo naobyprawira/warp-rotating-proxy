@@ -17,6 +17,7 @@ import secrets
 import signal
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -28,6 +29,7 @@ from warp_proxy.config import (
     PROXY_PASS,
     PROXY_USER,
     ROTATE_TOKEN,
+    WAIT_READY_TIMEOUT_SEC,
     WARP_SOCKS_HOST,
     WARP_SOCKS_PORT,
     log,
@@ -118,7 +120,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             pass
 
     def _open_tunnel_with_wait(self, host: str, port: int) -> socket.socket:
-        ROTATOR.wait_until_ready(timeout=CONNECT_TIMEOUT_SEC)
+        ROTATOR.wait_until_ready(timeout=WAIT_READY_TIMEOUT_SEC)
         try:
             return open_socks5_tunnel(
                 WARP_SOCKS_HOST,
@@ -129,15 +131,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
             )
         except (Socks5Error, OSError):
             if ROTATOR.is_rotating():
-                ROTATOR.wait_until_ready(timeout=CONNECT_TIMEOUT_SEC)
-                return open_socks5_tunnel(
-                    WARP_SOCKS_HOST,
-                    WARP_SOCKS_PORT,
-                    host,
-                    port,
-                    timeout=CONNECT_TIMEOUT_SEC,
-                )
-            raise
+                ROTATOR.wait_until_ready(timeout=WAIT_READY_TIMEOUT_SEC)
+            else:
+                time.sleep(0.3)
+            return open_socks5_tunnel(
+                WARP_SOCKS_HOST,
+                WARP_SOCKS_PORT,
+                host,
+                port,
+                timeout=CONNECT_TIMEOUT_SEC,
+            )
 
     def do_CONNECT(self) -> None:
         if not self._proxy_authorized():

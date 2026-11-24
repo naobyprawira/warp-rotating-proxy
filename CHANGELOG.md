@@ -5,6 +5,13 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-11-24
+
+### Fixed
+- Reduced `WARP_BAD_PREFIX_TTL` default from `1800s` to `300s` and added `WARP_MAX_BAD_PREFIXES` (`16`) eviction so the local WARP PoP `/64` pool is never starved into repeated 25–30s registration-reset loops.
+- Capped `rotate()` to at most one `registration reset` fallback (`step` 0–1) and shortened `_wait_connected_ip()` polling to `1.0s` (up to `10s`).
+- Added `WARP_WAIT_READY_TIMEOUT` (`35s`) and a single `0.3s` fallback retry in `_open_tunnel_with_wait()` so concurrent proxy requests survive transition glitches cleanly.
+
 ## [0.2.2] - 2026-11-24
 
 ### Fixed

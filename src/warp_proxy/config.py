@@ -51,8 +51,13 @@ WARP_CLI_BIN = resolve_binary(
 )
 
 ROTATE_COOLDOWN_SEC = float(os.environ.get("WARP_ROTATE_COOLDOWN", "15"))
-BAD_PREFIX_TTL_SEC = float(os.environ.get("WARP_BAD_PREFIX_TTL", "1800"))
+BAD_PREFIX_TTL_SEC = float(os.environ.get("WARP_BAD_PREFIX_TTL", "300"))
+MAX_BAD_PREFIXES = max(1, int(os.environ.get("WARP_MAX_BAD_PREFIXES", "16")))
 CONNECT_TIMEOUT_SEC = float(os.environ.get("WARP_CONNECT_TIMEOUT", "15"))
+WAIT_READY_TIMEOUT_SEC = max(
+    CONNECT_TIMEOUT_SEC,
+    float(os.environ.get("WARP_WAIT_READY_TIMEOUT", "35")),
+)
 
 TRACE_URL = os.environ.get("WARP_TRACE_URL", "https://cloudflare.com/cdn-cgi/trace")
 PAUSE_FILE = os.environ.get("WARP_PAUSE_FILE", "").strip()

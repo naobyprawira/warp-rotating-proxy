@@ -105,8 +105,10 @@ environment:
 | `WARP_CLI_BIN` | *(auto-detected)* | Override path to `warp-cli` executable |
 | `WARP_PROTOCOL` | `MASQUE` | WARP tunnel protocol (`MASQUE` required on `warp-cli 2026.8+`) |
 | `WARP_ROTATE_COOLDOWN` | `15` | Minimum seconds between non-forced rotations |
-| `WARP_BAD_PREFIX_TTL` | `1800` | How long rotated-from IPv6 `/64` prefixes are avoided (seconds) |
+| `WARP_BAD_PREFIX_TTL` | `300` | How long rotated-from IPv6 `/64` prefixes are avoided (seconds) |
+| `WARP_MAX_BAD_PREFIXES` | `16` | Maximum avoided `/64` prefixes before evicting oldest (prevents local PoP pool exhaustion) |
 | `WARP_CONNECT_TIMEOUT` | `15` | SOCKS5 tunnel connect timeout in seconds |
+| `WARP_WAIT_READY_TIMEOUT` | `35` | Max seconds proxy requests wait for an active WARP rotation to finish |
 | `WARP_PROXY_USER` | *(empty)* | Optional Basic auth username for HTTP `CONNECT` & plain-HTTP proxy |
 | `WARP_PROXY_PASS` | *(empty)* | Optional Basic auth password for HTTP `CONNECT` & plain-HTTP proxy |
 | `WARP_ROTATE_TOKEN` | *(empty)* | Optional secret for `POST /_rotate` (`Authorization: Bearer` or `X-API-Key`) |

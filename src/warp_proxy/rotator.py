@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from warp_proxy.config import (
     BAD_PREFIX_TTL_SEC,
+    MAX_BAD_PREFIXES,
     PAUSE_FILE,
     ROTATE_COOLDOWN_SEC,
     TRACE_URL,
@@ -71,8 +72,14 @@ class WarpRotator:
             self._bad_prefixes.pop(p, None)
 
     def mark_bad_prefix(self, prefix: str) -> None:
-        if prefix:
-            self._bad_prefixes[prefix] = time.monotonic() + BAD_PREFIX_TTL_SEC
+        if not prefix:
+            return
+        self._prune_bad_prefixes()
+        self._bad_prefixes.pop(prefix, None)
+        while len(self._bad_prefixes) >= MAX_BAD_PREFIXES:
+            oldest = next(iter(self._bad_prefixes))
+            self._bad_prefixes.pop(oldest, None)
+        self._bad_prefixes[prefix] = time.monotonic() + BAD_PREFIX_TTL_SEC
 
     def trace_egress_ip(self) -> str:
         sock = None
@@ -186,8 +193,8 @@ class WarpRotator:
                 self._set_rotating(False)
 
     def _wait_connected_ip(self) -> str:
-        for _ in range(12):
-            time.sleep(1.5)
+        for _ in range(10):
+            time.sleep(1.0)
             if self.is_connected():
                 cand = self.trace_egress_ip()
                 if cand:
@@ -228,7 +235,7 @@ class WarpRotator:
             new_ip = ""
             self._set_rotating(True)
             try:
-                for step in range(3):
+                for step in range(2):
                     self._run_cli("disconnect")
                     if step == 0:
                         self._run_cli("tunnel", "rotate-keys")
@@ -247,7 +254,8 @@ class WarpRotator:
                         cand_p64 = ipv6_prefix64(cand)
                         if cand_p64 != old_p64 and cand_p64 not in self._bad_prefixes:
                             break
-                        log(f"WARP returned spent/same /64 ({cand_p64}), retrying...")
+                        if step == 0:
+                            log(f"WARP returned spent/same /64 ({cand_p64}), retrying...")
             finally:
                 self._set_rotating(False)
                 if PAUSE_FILE:
