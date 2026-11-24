@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import ssl
 import subprocess
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 from proxy_config import (
     BAD_PREFIX_TTL_SEC,
@@ -19,6 +21,7 @@ from proxy_config import (
     WARP_SOCKS_PORT,
     log,
 )
+from socks5_tunnel import open_socks5_tunnel
 
 
 def ipv6_prefix64(ip: str) -> str:
@@ -50,26 +53,59 @@ class WarpRotator:
             self._bad_prefixes[prefix] = time.monotonic() + BAD_PREFIX_TTL_SEC
 
     def trace_egress_ip(self) -> str:
+        sock = None
         try:
-            r = subprocess.run(
-                [
-                    "curl",
-                    "-s",
-                    "-m",
-                    "8",
-                    "-x",
-                    f"socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
-                    TRACE_URL,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            parsed = urlsplit(TRACE_URL)
+            scheme = (parsed.scheme or "https").lower()
+            host = parsed.hostname or "cloudflare.com"
+            default_port = 443 if scheme == "https" else 80
+            port = parsed.port or default_port
+            path = parsed.path or "/"
+            if parsed.query:
+                path = f"{path}?{parsed.query}"
+            host_header = host if port == default_port else f"{host}:{port}"
+
+            raw_sock = open_socks5_tunnel(
+                WARP_SOCKS_HOST, WARP_SOCKS_PORT, host, port, timeout=8.0
             )
-            for line in r.stdout.splitlines():
+            raw_sock.settimeout(8.0)
+            if scheme == "https":
+                sock = ssl.create_default_context().wrap_socket(
+                    raw_sock, server_hostname=host
+                )
+            else:
+                sock = raw_sock
+
+            req = (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: {host_header}\r\n"
+                "User-Agent: warp-rotating-proxy\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode("ascii")
+            sock.sendall(req)
+
+            chunks: list[bytes] = []
+            total = 0
+            while total < 65536:
+                data = sock.recv(4096)
+                if not data:
+                    break
+                chunks.append(data)
+                total += len(data)
+
+            raw_resp = b"".join(chunks).decode("utf-8", errors="replace")
+            body = raw_resp.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in raw_resp else raw_resp
+            for line in body.splitlines():
                 if line.startswith("ip="):
                     return line.split("=", 1)[1].strip()
         except Exception:
             pass
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
         return ""
 
     def is_connected(self) -> bool:
