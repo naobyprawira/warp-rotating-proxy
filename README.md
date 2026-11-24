@@ -10,7 +10,7 @@ Useful for any tool, container, or API client (`curl`, `HTTP_PROXY`/`HTTPS_PROXY
 Client / Bridge (HTTP_PROXY=http://127.0.0.1:40001)
    │  (HTTP CONNECT / forward + POST /_rotate)
    ▼
-warp_rotating_proxy.py      (Python 3 stdlib: HTTP proxy + rotation webhook)
+warp_proxy.server           (Python 3 stdlib: HTTP proxy + rotation webhook)
    │  (SOCKS5h tunnel)
    ▼
 warp-cli MASQUE proxy       (socks5h://127.0.0.1:40000) ──▶ Internet (Cloudflare WARP)
@@ -115,5 +115,5 @@ environment:
 ## Testing
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -v
 ```

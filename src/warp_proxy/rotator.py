@@ -10,7 +10,7 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from proxy_config import (
+from warp_proxy.config import (
     BAD_PREFIX_TTL_SEC,
     PAUSE_FILE,
     ROTATE_COOLDOWN_SEC,
@@ -21,7 +21,7 @@ from proxy_config import (
     WARP_SOCKS_PORT,
     log,
 )
-from socks5_tunnel import open_socks5_tunnel
+from warp_proxy.socks5 import open_socks5_tunnel
 
 
 def ipv6_prefix64(ip: str) -> str:

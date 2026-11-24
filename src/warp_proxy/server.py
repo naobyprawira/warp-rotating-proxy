@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from proxy_config import (
+from warp_proxy.config import (
     CONNECT_TIMEOUT_SEC,
     LISTEN_HOST,
     LISTEN_PORT,
@@ -32,8 +32,8 @@ from proxy_config import (
     WARP_SOCKS_PORT,
     log,
 )
-from socks5_tunnel import Socks5Error, open_socks5_tunnel, relay_sockets
-from warp_rotator import ROTATOR
+from warp_proxy.rotator import ROTATOR
+from warp_proxy.socks5 import Socks5Error, open_socks5_tunnel, relay_sockets
 
 
 def parse_connect_authority(target: str) -> tuple[str, int]:

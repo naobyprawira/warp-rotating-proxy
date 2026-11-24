@@ -11,8 +11,8 @@ import threading
 import unittest
 from unittest.mock import patch
 
-import socks5_tunnel as s5
-import warp_rotating_proxy as wp
+from warp_proxy import server as wp
+from warp_proxy import socks5 as s5
 
 
 def _start_echo_server() -> tuple[socket.socket, int]:

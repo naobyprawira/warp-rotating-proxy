@@ -92,14 +92,22 @@ WARP_CLI_BIN="$(detect_or_prompt "warp-cli" "warp-cli" "WARP_CLI_BIN" "$WARP_CLI
   "$(command -v warp-cli 2>/dev/null || true)" \
   "/usr/bin/warp-cli" "/usr/local/bin/warp-cli" "/bin/warp-cli" "/opt/homebrew/bin/warp-cli")"
 
-mkdir -p "$DEST" "$UNIT_DIR"
+mkdir -p "$DEST/src/warp_proxy" "$UNIT_DIR"
+
+rm -f \
+  "$DEST/proxy_config.py" \
+  "$DEST/socks5_tunnel.py" \
+  "$DEST/warp_rotator.py" \
+  "$DEST/warp_rotating_proxy.py"
 
 for f in \
-  proxy_config.py \
-  socks5_tunnel.py \
-  warp_rotator.py \
-  warp_rotating_proxy.py; do
-  install -m 755 "$REPO_DIR/$f" "$DEST/$f"
+  __init__.py \
+  __main__.py \
+  config.py \
+  rotator.py \
+  server.py \
+  socks5.py; do
+  install -m 644 "$REPO_DIR/src/warp_proxy/$f" "$DEST/src/warp_proxy/$f"
 done
 
 cat > "$UNIT_FILE" <<EOF
@@ -110,7 +118,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$PYTHON_BIN $DEST/warp_rotating_proxy.py
+ExecStart=$PYTHON_BIN -m warp_proxy
+Environment=PYTHONPATH=$DEST/src
 Environment=WARP_PROXY_HOST=$WARP_PROXY_HOST
 Environment=WARP_PROXY_PORT=$WARP_PROXY_PORT
 Environment=WARP_SOCKS_HOST=$WARP_SOCKS_HOST

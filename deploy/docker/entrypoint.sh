@@ -40,6 +40,6 @@ if [[ ! -S /run/cloudflare-warp/warp_service ]]; then
   exit 1
 fi
 
-python3 /app/warp_rotating_proxy.py &
+python3 -m warp_proxy &
 PROXY_PID=$!
 wait "$PROXY_PID"

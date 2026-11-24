@@ -5,6 +5,12 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-24
+
+### Changed
+- Reorganized repository into a standard `src/warp_proxy/` Python package (`__main__.py` entrypoint), `deploy/docker/`, `deploy/systemd/`, `tests/__init__.py`, and `pyproject.toml` (still zero third-party `pip` dependencies).
+- Updated `Dockerfile` and root `install.sh` to run `python3 -m warp_proxy` with `PYTHONPATH` and clean up legacy flat files in `$WARP_PROXY_STATE_DIR` while preserving systemd drop-ins.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

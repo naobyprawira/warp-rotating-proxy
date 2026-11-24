@@ -5,7 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/.local/share/warp-rotating-proxy/warp_rotating_proxy.py
+ExecStart=/usr/bin/python3 -m warp_proxy
+Environment=PYTHONPATH=%h/.local/share/warp-rotating-proxy/src
 Environment=WARP_PROXY_HOST=127.0.0.1
 Environment=WARP_PROXY_PORT=40001
 Environment=WARP_SOCKS_HOST=127.0.0.1

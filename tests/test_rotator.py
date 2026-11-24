@@ -11,8 +11,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-import proxy_config as cfg
-import warp_rotator as wr
+from warp_proxy import config as cfg
+from warp_proxy import rotator as wr
 
 
 class TestRotator(unittest.TestCase):
