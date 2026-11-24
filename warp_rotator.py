@@ -1,0 +1,193 @@
+"""Cloudflare WARP MASQUE proxy supervision and IPv6 /64 rotation."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import threading
+import time
+from typing import Any
+
+from proxy_config import (
+    BAD_PREFIX_TTL_SEC,
+    PAUSE_FILE,
+    ROTATE_COOLDOWN_SEC,
+    TRACE_URL,
+    WARP_CLI_BIN,
+    WARP_PROTOCOL,
+    WARP_SOCKS_HOST,
+    WARP_SOCKS_PORT,
+    log,
+)
+
+
+def ipv6_prefix64(ip: str) -> str:
+    return ":".join(ip.split(":")[:4]) if ":" in ip else ip
+
+
+class WarpRotator:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_rotate_ts: float = 0.0
+        self._bad_prefixes: dict[str, float] = {}
+
+    def _run_cli(self, *args: str, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [WARP_CLI_BIN, "--accept-tos", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    def _prune_bad_prefixes(self) -> None:
+        now = time.monotonic()
+        expired = [p for p, exp in self._bad_prefixes.items() if exp <= now]
+        for p in expired:
+            self._bad_prefixes.pop(p, None)
+
+    def mark_bad_prefix(self, prefix: str) -> None:
+        if prefix:
+            self._bad_prefixes[prefix] = time.monotonic() + BAD_PREFIX_TTL_SEC
+
+    def trace_egress_ip(self) -> str:
+        try:
+            r = subprocess.run(
+                [
+                    "curl",
+                    "-s",
+                    "-m",
+                    "8",
+                    "-x",
+                    f"socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
+                    TRACE_URL,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            for line in r.stdout.splitlines():
+                if line.startswith("ip="):
+                    return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+        return ""
+
+    def is_connected(self) -> bool:
+        try:
+            st = self._run_cli("status", timeout=5.0).stdout
+            return "Connected" in st
+        except Exception:
+            return False
+
+    def status(self, include_ip: bool = True) -> dict[str, Any]:
+        self._prune_bad_prefixes()
+        connected = self.is_connected()
+        ip = self.trace_egress_ip() if (connected and include_ip) else ""
+        return {
+            "warp_connected": connected,
+            "socks_upstream": f"socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
+            "protocol": WARP_PROTOCOL,
+            "egress_ip": ip or None,
+            "prefix64": ipv6_prefix64(ip) if ip else None,
+            "bad_prefixes_count": len(self._bad_prefixes),
+        }
+
+    def ensure_connected(self) -> bool:
+        if self.is_connected():
+            return True
+        with self._lock:
+            if self.is_connected():
+                return True
+            log("WARP not connected; configuring proxy mode and connecting...")
+            self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
+            self._run_cli("mode", "proxy")
+            self._run_cli("proxy", "port", str(WARP_SOCKS_PORT))
+            self._run_cli("connect")
+            for _ in range(12):
+                time.sleep(1.0)
+                if self.is_connected():
+                    return True
+            return False
+
+    def _wait_connected_ip(self) -> str:
+        for _ in range(12):
+            time.sleep(1.5)
+            if self.is_connected():
+                cand = self.trace_egress_ip()
+                if cand:
+                    return cand
+        return ""
+
+    def rotate(self, force: bool = False) -> dict[str, Any]:
+        with self._lock:
+            self._prune_bad_prefixes()
+            now = time.monotonic()
+            if (
+                not force
+                and self._last_rotate_ts > 0
+                and (now - self._last_rotate_ts) < ROTATE_COOLDOWN_SEC
+            ):
+                cur_ip = self.trace_egress_ip()
+                return {
+                    "ok": bool(cur_ip),
+                    "rotated": False,
+                    "cooldown": True,
+                    "old_ip": cur_ip or None,
+                    "new_ip": cur_ip or None,
+                }
+
+            old_ip = self.trace_egress_ip()
+            old_p64 = ipv6_prefix64(old_ip)
+            if old_p64:
+                self.mark_bad_prefix(old_p64)
+            log(f"Rotating WARP identity (old={old_ip or '?'})...")
+
+            if PAUSE_FILE:
+                try:
+                    os.makedirs(os.path.dirname(PAUSE_FILE), exist_ok=True)
+                    open(PAUSE_FILE, "w").close()
+                except OSError:
+                    pass
+
+            new_ip = ""
+            try:
+                for step in range(3):
+                    self._run_cli("disconnect")
+                    if step == 0:
+                        self._run_cli("tunnel", "rotate-keys")
+                    else:
+                        log(f"Performing WARP registration reset (step={step})")
+                        self._run_cli("registration", "delete")
+                        time.sleep(1.0)
+                        self._run_cli("registration", "new")
+                    self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
+                    self._run_cli("mode", "proxy")
+                    self._run_cli("proxy", "port", str(WARP_SOCKS_PORT))
+                    self._run_cli("connect")
+                    cand = self._wait_connected_ip()
+                    if cand:
+                        new_ip = cand
+                        cand_p64 = ipv6_prefix64(cand)
+                        if cand_p64 != old_p64 and cand_p64 not in self._bad_prefixes:
+                            break
+                        log(f"WARP returned spent/same /64 ({cand_p64}), retrying...")
+            finally:
+                if PAUSE_FILE:
+                    try:
+                        if os.path.exists(PAUSE_FILE):
+                            os.remove(PAUSE_FILE)
+                    except OSError:
+                        pass
+
+            self._last_rotate_ts = time.monotonic()
+            log(f"WARP rotation complete (old={old_ip or '?'} -> new={new_ip or '?'})")
+            return {
+                "ok": bool(new_ip),
+                "rotated": bool(new_ip and new_ip != old_ip),
+                "cooldown": False,
+                "old_ip": old_ip or None,
+                "new_ip": new_ip or None,
+            }
+
+
+ROTATOR = WarpRotator()
