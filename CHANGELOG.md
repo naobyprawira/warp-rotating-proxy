@@ -5,6 +5,15 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-24
+
+### Added
+- Containerized deployment via `Dockerfile`, `docker-entrypoint.sh`, `.dockerignore`, and `docker-compose.yml` bundling `dbus`, `cloudflare-warp` (`warp-svc` + `warp-cli`), and the Python proxy inside an isolated container network namespace.
+- Automatic WARP device registration (`WarpRotator.is_registered()` + `registration new` inside `ensure_connected()`) for clean containers and fresh hosts.
+- Optional Basic `Proxy-Authorization` protection (`WARP_PROXY_USER` / `WARP_PROXY_PASS`, returning `407 Proxy Authentication Required`) with `proxy-authorization` header stripping on plain-HTTP forwards.
+- `X-API-Key` header support alongside `Authorization: Bearer` for `POST /_rotate` when `WARP_ROTATE_TOKEN` is set.
+- `PORT` environment fallback for `WARP_PROXY_PORT` via `resolve_port()`, plus `proxy_auth_enabled` and `rotate_auth_enabled` fields in `/health`.
+
 ## [0.1.1] - 2026-11-24
 
 ### Added
