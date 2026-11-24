@@ -174,6 +174,22 @@ class TestRotator(unittest.TestCase):
         self.assertNotIn(("registration", "new"), cli_calls)
         self.assertIn(("connect",), cli_calls)
 
+    def test_wait_until_ready_waits_for_rotation_finish(self) -> None:
+        rot = wr.WarpRotator()
+        rot._set_rotating(True)
+        done: list[bool] = []
+
+        def waiter() -> None:
+            done.append(rot.wait_until_ready(timeout=2.0))
+
+        t = threading.Thread(target=waiter, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        self.assertEqual(done, [])
+        rot._set_rotating(False)
+        t.join(timeout=2.0)
+        self.assertEqual(done, [True])
+
 
 if __name__ == "__main__":
     unittest.main()

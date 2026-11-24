@@ -31,8 +31,30 @@ def ipv6_prefix64(ip: str) -> str:
 class WarpRotator:
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._state_cond = threading.Condition()
+        self._rotating = False
         self._last_rotate_ts: float = 0.0
         self._bad_prefixes: dict[str, float] = {}
+
+    def _set_rotating(self, active: bool) -> None:
+        with self._state_cond:
+            self._rotating = active
+            if not active:
+                self._state_cond.notify_all()
+
+    def is_rotating(self) -> bool:
+        with self._state_cond:
+            return self._rotating
+
+    def wait_until_ready(self, timeout: float = 15.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        with self._state_cond:
+            while self._rotating:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._state_cond.wait(remaining)
+        return True
 
     def _run_cli(self, *args: str, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -130,6 +152,7 @@ class WarpRotator:
         ip = self.trace_egress_ip() if (connected and include_ip) else ""
         return {
             "warp_connected": connected,
+            "rotating": self.is_rotating(),
             "socks_upstream": f"socks5h://{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
             "protocol": WARP_PROTOCOL,
             "egress_ip": ip or None,
@@ -143,20 +166,24 @@ class WarpRotator:
         with self._lock:
             if self.is_connected():
                 return True
-            if not self.is_registered():
-                log("WARP not registered; registering new device...")
-                self._run_cli("registration", "new")
-                time.sleep(1.0)
-            log("WARP not connected; configuring proxy mode and connecting...")
-            self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
-            self._run_cli("mode", "proxy")
-            self._run_cli("proxy", "port", str(WARP_SOCKS_PORT))
-            self._run_cli("connect")
-            for _ in range(12):
-                time.sleep(1.0)
-                if self.is_connected():
-                    return True
-            return False
+            self._set_rotating(True)
+            try:
+                if not self.is_registered():
+                    log("WARP not registered; registering new device...")
+                    self._run_cli("registration", "new")
+                    time.sleep(1.0)
+                log("WARP not connected; configuring proxy mode and connecting...")
+                self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
+                self._run_cli("mode", "proxy")
+                self._run_cli("proxy", "port", str(WARP_SOCKS_PORT))
+                self._run_cli("connect")
+                for _ in range(12):
+                    time.sleep(1.0)
+                    if self.is_connected():
+                        return True
+                return False
+            finally:
+                self._set_rotating(False)
 
     def _wait_connected_ip(self) -> str:
         for _ in range(12):
@@ -199,6 +226,7 @@ class WarpRotator:
                     pass
 
             new_ip = ""
+            self._set_rotating(True)
             try:
                 for step in range(3):
                     self._run_cli("disconnect")
@@ -221,6 +249,7 @@ class WarpRotator:
                             break
                         log(f"WARP returned spent/same /64 ({cand_p64}), retrying...")
             finally:
+                self._set_rotating(False)
                 if PAUSE_FILE:
                     try:
                         if os.path.exists(PAUSE_FILE):

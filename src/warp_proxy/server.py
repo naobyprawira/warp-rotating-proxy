@@ -117,6 +117,28 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _open_tunnel_with_wait(self, host: str, port: int) -> socket.socket:
+        ROTATOR.wait_until_ready(timeout=CONNECT_TIMEOUT_SEC)
+        try:
+            return open_socks5_tunnel(
+                WARP_SOCKS_HOST,
+                WARP_SOCKS_PORT,
+                host,
+                port,
+                timeout=CONNECT_TIMEOUT_SEC,
+            )
+        except (Socks5Error, OSError):
+            if ROTATOR.is_rotating():
+                ROTATOR.wait_until_ready(timeout=CONNECT_TIMEOUT_SEC)
+                return open_socks5_tunnel(
+                    WARP_SOCKS_HOST,
+                    WARP_SOCKS_PORT,
+                    host,
+                    port,
+                    timeout=CONNECT_TIMEOUT_SEC,
+                )
+            raise
+
     def do_CONNECT(self) -> None:
         if not self._proxy_authorized():
             self._send_proxy_auth_required()
@@ -128,13 +150,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            remote = open_socks5_tunnel(
-                WARP_SOCKS_HOST,
-                WARP_SOCKS_PORT,
-                host,
-                port,
-                timeout=CONNECT_TIMEOUT_SEC,
-            )
+            remote = self._open_tunnel_with_wait(host, port)
         except (Socks5Error, OSError) as exc:
             self._send_json(502, {"error": f"WARP SOCKS5 tunnel error: {exc}"})
             return
@@ -158,6 +174,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "listen": f"{LISTEN_HOST}:{LISTEN_PORT}",
                     "socks_upstream": f"{WARP_SOCKS_HOST}:{WARP_SOCKS_PORT}",
                     "warp_connected": ROTATOR.is_connected(),
+                    "rotating": ROTATOR.is_rotating(),
                     "proxy_auth_enabled": bool(PROXY_USER or PROXY_PASS),
                     "rotate_auth_enabled": bool(ROTATE_TOKEN),
                 },
@@ -191,13 +208,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length > 0 else b""
 
         try:
-            remote = open_socks5_tunnel(
-                WARP_SOCKS_HOST,
-                WARP_SOCKS_PORT,
-                host,
-                port,
-                timeout=CONNECT_TIMEOUT_SEC,
-            )
+            remote = self._open_tunnel_with_wait(host, port)
         except (Socks5Error, OSError) as exc:
             self._send_json(502, {"error": f"WARP SOCKS5 forward error: {exc}"})
             return
