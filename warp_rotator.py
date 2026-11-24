@@ -108,6 +108,15 @@ class WarpRotator:
                     pass
         return ""
 
+    def is_registered(self) -> bool:
+        try:
+            r = self._run_cli("registration", "show", timeout=5.0)
+            return r.returncode == 0 and (
+                "Device ID:" in r.stdout or "Account type:" in r.stdout
+            )
+        except Exception:
+            return False
+
     def is_connected(self) -> bool:
         try:
             st = self._run_cli("status", timeout=5.0).stdout
@@ -134,6 +143,10 @@ class WarpRotator:
         with self._lock:
             if self.is_connected():
                 return True
+            if not self.is_registered():
+                log("WARP not registered; registering new device...")
+                self._run_cli("registration", "new")
+                time.sleep(1.0)
             log("WARP not connected; configuring proxy mode and connecting...")
             self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
             self._run_cli("mode", "proxy")

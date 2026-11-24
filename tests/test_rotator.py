@@ -114,6 +114,66 @@ class TestRotator(unittest.TestCase):
         self.assertIn(("tunnel", "rotate-keys"), cli_calls)
         self.assertIn(("registration", "new"), cli_calls)
 
+    def test_resolve_port_priority_and_default(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(cfg.resolve_port(("WARP_PROXY_PORT", "PORT"), 40001), 40001)
+        with patch.dict(os.environ, {"PORT": "18080"}, clear=True):
+            self.assertEqual(cfg.resolve_port(("WARP_PROXY_PORT", "PORT"), 40001), 18080)
+        with patch.dict(os.environ, {"WARP_PROXY_PORT": "41001", "PORT": "18080"}, clear=True):
+            self.assertEqual(cfg.resolve_port(("WARP_PROXY_PORT", "PORT"), 40001), 41001)
+
+    def test_is_registered_checks_cli_output(self) -> None:
+        rot = wr.WarpRotator()
+        ok_cp = subprocess.CompletedProcess(
+            ("registration", "show"),
+            0,
+            "Account type: Free\nDevice ID: abc-123\n",
+            "",
+        )
+        missing_cp = subprocess.CompletedProcess(
+            ("registration", "show"),
+            1,
+            "",
+            "Registration Missing",
+        )
+        with patch.object(rot, "_run_cli", return_value=ok_cp):
+            self.assertTrue(rot.is_registered())
+        with patch.object(rot, "_run_cli", return_value=missing_cp):
+            self.assertFalse(rot.is_registered())
+
+    def test_ensure_connected_auto_registers_when_unregistered(self) -> None:
+        rot = wr.WarpRotator()
+        cli_calls: list[tuple[str, ...]] = []
+
+        def fake_cli(*args: str, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
+            cli_calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "Success", "")
+
+        with patch.object(rot, "is_connected", side_effect=[False, False, True]), patch.object(
+            rot, "is_registered", return_value=False
+        ), patch.object(rot, "_run_cli", side_effect=fake_cli), patch("time.sleep"):
+            self.assertTrue(rot.ensure_connected())
+
+        self.assertEqual(cli_calls[0], ("registration", "new"))
+        self.assertIn(("mode", "proxy"), cli_calls)
+        self.assertIn(("connect",), cli_calls)
+
+    def test_ensure_connected_skips_registration_when_already_registered(self) -> None:
+        rot = wr.WarpRotator()
+        cli_calls: list[tuple[str, ...]] = []
+
+        def fake_cli(*args: str, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
+            cli_calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "Success", "")
+
+        with patch.object(rot, "is_connected", side_effect=[False, False, True]), patch.object(
+            rot, "is_registered", return_value=True
+        ), patch.object(rot, "_run_cli", side_effect=fake_cli), patch("time.sleep"):
+            self.assertTrue(rot.ensure_connected())
+
+        self.assertNotIn(("registration", "new"), cli_calls)
+        self.assertIn(("connect",), cli_calls)
+
 
 if __name__ == "__main__":
     unittest.main()
