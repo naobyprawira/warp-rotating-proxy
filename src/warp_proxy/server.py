@@ -132,6 +132,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except (Socks5Error, OSError):
             if ROTATOR.is_rotating():
                 ROTATOR.wait_until_ready(timeout=WAIT_READY_TIMEOUT_SEC)
+            elif not ROTATOR.is_connected():
+                ROTATOR.ensure_connected()
             else:
                 time.sleep(0.3)
             return open_socks5_tunnel(

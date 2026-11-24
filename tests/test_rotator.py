@@ -201,6 +201,26 @@ class TestRotator(unittest.TestCase):
             ["2a09:bac5:3a00:2", "2a09:bac5:3a00:3"],
         )
 
+    def test_ensure_connected_disconnects_stuck_connecting_state(self) -> None:
+        rot = wr.WarpRotator()
+        cli_calls: list[tuple[str, ...]] = []
+
+        def fake_cli(*args: str, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
+            cli_calls.append(args)
+            if args == ("status",):
+                return subprocess.CompletedProcess(
+                    args, 0, "Status update: Connecting\nReason: Performing happy eyeballs", ""
+                )
+            return subprocess.CompletedProcess(args, 0, "Success", "")
+
+        with patch.object(rot, "is_connected", side_effect=[False, False, True]), patch.object(
+            rot, "is_registered", return_value=True
+        ), patch.object(rot, "_run_cli", side_effect=fake_cli), patch("time.sleep"):
+            self.assertTrue(rot.ensure_connected())
+
+        self.assertIn(("disconnect",), cli_calls)
+        self.assertLess(cli_calls.index(("disconnect",)), cli_calls.index(("connect",)))
+
 
 if __name__ == "__main__":
     unittest.main()

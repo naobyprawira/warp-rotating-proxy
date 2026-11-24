@@ -256,6 +256,26 @@ class TestProxy(unittest.TestCase):
             socks_srv.close()
             echo_srv.close()
 
+    def test_open_tunnel_with_wait_recovers_disconnected_warp(self) -> None:
+        handler = wp.ProxyHandler.__new__(wp.ProxyHandler)
+        mock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            with patch.object(wp.ROTATOR, "wait_until_ready", return_value=True), patch.object(
+                wp.ROTATOR, "is_rotating", return_value=False
+            ), patch.object(wp.ROTATOR, "is_connected", return_value=False), patch.object(
+                wp.ROTATOR, "ensure_connected", return_value=True
+            ) as mock_ensure, patch.object(
+                wp,
+                "open_socks5_tunnel",
+                side_effect=[OSError("connection refused"), mock_sock],
+            ) as mock_open:
+                res = handler._open_tunnel_with_wait("opencode.ai", 443)
+            self.assertIs(res, mock_sock)
+            self.assertEqual(mock_open.call_count, 2)
+            mock_ensure.assert_called_once_with()
+        finally:
+            mock_sock.close()
+
 
 if __name__ == "__main__":
     unittest.main()

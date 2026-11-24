@@ -5,6 +5,12 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-11-24
+
+### Fixed
+- Self-healed disconnected or stuck `Connecting` WARP states automatically inside `_open_tunnel_with_wait()` by calling `ROTATOR.ensure_connected()` when a SOCKS5 tunnel attempt fails while no rotation is active.
+- Updated `WarpRotator.ensure_connected()` to `disconnect` first when `warp-cli status` is stuck in `Connecting` (e.g. `Performing happy eyeballs`) before reconfiguring MASQUE proxy mode and reconnecting.
+
 ## [0.2.3] - 2026-11-24
 
 ### Fixed

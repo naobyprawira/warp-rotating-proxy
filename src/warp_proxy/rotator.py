@@ -180,11 +180,17 @@ class WarpRotator:
                     self._run_cli("registration", "new")
                     time.sleep(1.0)
                 log("WARP not connected; configuring proxy mode and connecting...")
+                try:
+                    st_out = self._run_cli("status", timeout=5.0).stdout
+                    if "Connecting" in st_out:
+                        self._run_cli("disconnect", timeout=5.0)
+                except Exception:
+                    pass
                 self._run_cli("tunnel", "protocol", "set", WARP_PROTOCOL)
                 self._run_cli("mode", "proxy")
                 self._run_cli("proxy", "port", str(WARP_SOCKS_PORT))
                 self._run_cli("connect")
-                for _ in range(12):
+                for _ in range(10):
                     time.sleep(1.0)
                     if self.is_connected():
                         return True
