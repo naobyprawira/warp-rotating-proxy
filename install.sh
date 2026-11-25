@@ -106,7 +106,8 @@ for f in \
   config.py \
   rotator.py \
   server.py \
-  socks5.py; do
+  socks5.py \
+  workers.py; do
   install -m 644 "$REPO_DIR/src/warp_proxy/$f" "$DEST/src/warp_proxy/$f"
 done
 

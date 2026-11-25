@@ -5,6 +5,11 @@ All notable changes to `warp-rotating-proxy` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-11-24
+
+### Added
+- `warp_proxy.workers` CLI (`python3 -m warp_proxy.workers provision|start|stop|status|env`) for multi-worker Docker WARP fleets with configurable `--standby` (always-on, `--restart unless-stopped`), `--max` (including `--restart no` on-demand containers), `--pre-register` batch warm-up for ~3–5s cold starts, and locked-down `/etc/sudoers.d/warp-workers` (`start`/`stop`/`inspect` only).
+
 ## [0.2.4] - 2026-11-24
 
 ### Fixed

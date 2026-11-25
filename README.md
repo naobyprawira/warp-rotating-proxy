@@ -114,6 +114,24 @@ environment:
 | `WARP_ROTATE_TOKEN` | *(empty)* | Optional secret for `POST /_rotate` (`Authorization: Bearer` or `X-API-Key`) |
 | `WARP_PAUSE_FILE` | *(empty)* | Optional lock/pause file path touched while rotating |
 
+## Multi-Worker Fleet (Standby + Summon-on-Event)
+
+For concurrent workloads alongside [`opencode-openai-bridge`](https://github.com/naobyprawira/opencode-openai-bridge), `warp_proxy.workers` provisions an isolated Docker WARP fleet with always-on standby workers and pre-registered on-demand containers:
+
+```bash
+# Build image, start standby=3 (ports 40011-40013), pre-register on-demand 4-15 (40014-40025),
+# and install passwordless /etc/sudoers.d/warp-workers for start/stop/inspect
+python3 -m warp_proxy.workers provision \
+  --standby 3 --max 15 --base-port 40011 --prefix warp-worker \
+  --build --pre-register --sudo --install-sudoers-user "$USER"
+
+# Inspect container & WARP health across all 15 workers
+python3 -m warp_proxy.workers status --standby 3 --max 15 --ip
+
+# Emit BRIDGE_UPSTREAM_WORKERS manifest
+python3 -m warp_proxy.workers env --standby 3 --max 15
+```
+
 ## Testing
 
 ```bash
